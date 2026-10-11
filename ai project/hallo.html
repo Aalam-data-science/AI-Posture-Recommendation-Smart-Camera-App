@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuralTouch AI Pro - Spatial Web Interface</title>
+    <!-- MediaPipe Hands & Camera Utils -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    
+    <style>
+        :root {
+            --primary: #00ffcc;
+            --primary-glow: rgba(0, 255, 204, 0.45);
+            --secondary: #ff007f;
+            --secondary-glow: rgba(255, 0, 127, 0.45);
+            --bg-dark: #080c10;
+            --glass-bg: rgba(16, 24, 34, 0.78);
+            --glass-border: rgba(0, 255, 204, 0.28);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-dark);
+            color: #ffffff;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Ambient Cyber Grid Background */
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Holographic Virtual Laser Cursor */
+        #cursor {
+            position: fixed;
+            width: 32px;
+            height: 32px;
+            margin-left: -16px;
+            margin-top: -16px;
+            border-radius: 50%;
+            border: 2px solid var(--primary);
+            box-shadow: 0 0 20px var(--primary-glow), inset 0 0 10px var(--primary-glow);
+            pointer-events: none;
+            z-index: 99999;
+            transition: transform 0.08s ease-out, background 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #cursor::after {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #ffffff;
+        }
+
+        #cursor.clicking {
+            transform: scale(0.7);
+            border-color: #ff3366;
+            box-shadow: 0 0 25px rgba(255, 51, 102, 0.8), inset 0 0 15px rgba(255, 51, 102, 0.6);
+            background: rgba(255, 51, 102, 0.35);
+        }
+
+        #cursor.hovering {
+            transform: scale(1.35);
+            border-color: #ffe600;
+            box-shadow: 0 0 30px rgba(255, 230, 0, 0.7);
+        }
+
+        /* Floating Mini Camera PIP */
+        #video-container {
+            position: fixed;
+            right: 25px;
+            bottom: 25px;
+            width: 260px;
+            height: 185px;
+            border: 2px solid var(--glass-border);
+            border-radius: 16px;
+            overflow: hidden;
+            z-index: 1000;
+            background: #000000;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px var(--primary-glow);
+            transition: 0.3s;
+        }
+
+        #video-container:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+        }
+
+        #webcam {
+            display: none;
+        }
+
+        #output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: rotateY(180deg);
+        }
+
+        .cam-label {
+            position: absolute;
+            top: 8px;
+            left: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--primary);
+            text-shadow: 0 0 6px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+
+        /* Telemetry Status Panel */
+        .status-panel {
+            position: fixed;
+            top: 25px;
+            left: 25px;
+            padding: 20px 24px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--glass-border);
+            border-left: 5px solid var(--primary);
+            border-radius: 14px;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            min-width: 260px;
+        }
+
+        .status-panel h2 {
+            margin: 0 0 8px 0;
+            font-size: 18px;
+            letter-spacing: 2px;
+            color: var(--primary);
+            text-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .status-panel p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #d0dbe5;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(0, 255, 204, 0.15);
+            color: var(--primary);
+            border: 1px solid var(--glass-border);
+        }
+
+        /* Central Holographic App Dashboard */
+        .app-container {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .hero-title {
+            font-size: 50px;
+            font-weight: 900;
+            margin: 0 0 10px 0;
+            letter-spacing: 3px;
+            background: linear-gradient(135deg, #ffffff 30%, var(--primary) 70%, #00bfff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 35px var(--primary-glow);
+        }
+
+        .hero-subtitle {
+            font-size: 17px;
+            color: #8da4be;
+            max-width: 650px;
+            line-height: 1.6;
+            margin-bottom: 35px;
+        }
+
+        /* Interactive Grid Cards */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 22px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        .interactive-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 26px 20px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+        }
+
+        .interactive-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            opacity: 0;
+            transition: 0.3s;
+        }
+
+        .interactive-card:hover, .interactive-card.hovered {
+            transform: translateY(-8px) scale(1.03);
+            border-color: var(--primary);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 25px var(--primary-glow);
+        }
+
+        .interactive-card:hover::before, .interactive-card.hovered::before {
+            opacity: 1;
+        }
+
+        .card-icon {
+            font-size: 36px;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+        }
+
+        .card-desc {
+            font-size: 13px;
+            color: #9cb2cc;
+        }
+
+        /* Action Buttons */
+        .actions-row {
+            margin-top: 35px;
+            display: flex;
+            gap: 16px;
+        }
+
+        .cyber-btn {
+            padding: 14px 32px;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: rgba(0, 255, 204, 0.1);
+            border: 2px solid var(--primary);
+            color: var(--primary);
+            border-radius: 30px;
+            cursor: pointer;
+            transition: 0.25s;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+        }
+
+        .cyber-btn:hover, .cyber-btn.hovered {
+            background: var(--primary);
+            color: #080c10;
+            box-shadow: 0 0 30px var(--primary);
+            transform: scale(1.05);
+        }
+
+        /* Feedback Modal Banner */
+        #alert-banner {
+            position: fixed;
+            top: 25px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            border: 2px solid var(--primary);
+            padding: 16px 36px;
+            border-radius: 50px;
+            font-weight: 700;
+            color: #ffffff;
+            box-shadow: 0 0 35px var(--primary-glow);
+            z-index: 10000;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+        }
+
+        #alert-banner.active {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Cyber Background Canvas -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- Holographic Virtual Cursor -->
+    <div id="cursor"></div>
+
+    <!-- Alert Modal Banner -->
+    <div id="alert-banner">✨ NEURAL TOUCH ACTIVATED!</div>
+
+    <!-- Telemetry Status Panel -->
+    <div class="status-panel">
+        <h2>NEURAL TOUCH OS</h2>
+        <p>TRACKER: <span class="badge" id="tracker-status">INITIALIZING...</span></p>
+        <p>GESTURE: <span id="gesture-text" style="color:var(--primary); font-weight:700;">NONE</span></p>
+        <p>COORDINATES: <span id="coords-text" style="color:#8da4be;">(0, 0)</span></p>
+        <p>FPS: <span id="fps-text" style="color:#00ff88; font-weight:700;">60</span></p>
+    </div>
+
+    <!-- Main Spatial Workspace -->
+    <div class="app-container">
+        <h1 class="hero-title">SPATIAL TOUCHLESS WEB</h1>
+        <p class="hero-subtitle">
+            Hover your hand in front of the camera. Move with your index fingertip and <b>pinch your thumb & index finger</b> to click buttons without ever touching the screen!
+        </p>
+
+        <div class="cards-grid">
+            <div class="interactive-card" onclick="triggerCard('SOUND SYNTH')">
+                <div class="card-icon">⚡</div>
+                <div class="card-title">Audio Synthesizer</div>
+                <div class="card-desc">Emits harmonic sci-fi frequencies via Web Audio API.</div>
+            </div>
+
+            <div class="interactive-card" onclick="triggerCard('QUANTUM CORE')">
+                <div class="card-icon">🔮</div>
+                <div class="card-title">Quantum Core</div>
+                <div class="card-desc">Simulates particle resonance & energy lock.</div>
+            </div>
+
+            <div class="interactive-card" onclick="triggerCard('CYBER MATRIX')">
+                <div class="card-icon">🌌</div>
+                <div class="card-title">Cyber Matrix</div>
+                <div class="card-desc">Switches cyber aesthetic and visual themes.</div>
+            </div>
+        </div>
+
+        <div class="actions-row">
+            <button class="cyber-btn" onclick="triggerBanner('EXPLORE PRODUCTS - Spatial Mode Engaged')">LAUNCH SUITE</button>
+            <button class="cyber-btn" onclick="triggerBanner('SYSTEM RECALIBRATED'); location.reload();">RELOAD OS</button>
+        </div>
+    </div>
+
+    <!-- Video Camera PIP -->
+    <div id="video-container">
+        <div class="cam-label">AI VISION FEED</div>
+        <video id="webcam" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script>
+        // --- Web Audio Synthesizer ---
+        let audioCtx = null;
+        function playTone(freq = 600, duration = 0.08, type = 'sine') {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        // --- Alert Banner Trigger ---
+        const alertBanner = document.getElementById('alert-banner');
+        let bannerTimer = null;
+        function triggerBanner(text) {
+            playTone(1200, 0.15, 'triangle');
+            playTone(1600, 0.2, 'sine');
+            alertBanner.innerText = text;
+            alertBanner.classList.add('active');
+            clearTimeout(bannerTimer);
+            bannerTimer = setTimeout(() => {
+                alertBanner.classList.remove('active');
+            }, 2400);
+        }
+
+        function triggerCard(title) {
+            triggerBanner(`🚀 ENGAGED: ${title}`);
+        }
+
+        // --- Cyber Particle Background ---
+        const bgCanvas = document.getElementById('bg-canvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        let bgWidth = (bgCanvas.width = window.innerWidth);
+        let bgHeight = (bgCanvas.height = window.innerHeight);
+
+        window.addEventListener('resize', () => {
+            bgWidth = bgCanvas.width = window.innerWidth;
+            bgHeight = bgCanvas.height = window.innerHeight;
+        });
+
+        const particles = Array.from({ length: 60 }, () => ({
+            x: Math.random() * bgWidth,
+            y: Math.random() * bgHeight,
+            vx: (Math.random() - 0.5) * 0.7,
+            vy: (Math.random() - 0.5) * 0.7,
+            radius: Math.random() * 2 + 1,
+            color: Math.random() > 0.5 ? 'rgba(0, 255, 204, 0.4)' : 'rgba(0, 150, 255, 0.3)'
+        }));
+
+        function drawBackground() {
+            bgCtx.clearRect(0, 0, bgWidth, bgHeight);
+            particles.forEach((p) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < 0) p.x = bgWidth;
+                if (p.x > bgWidth) p.x = 0;
+                if (p.y < 0) p.y = bgHeight;
+                if (p.y > bgHeight) p.y = 0;
+
+                bgCtx.beginPath();
+                bgCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                bgCtx.fillStyle = p.color;
+                bgCtx.fill();
+            });
+            requestAnimationFrame(drawBackground);
+        }
+        drawBackground();
+
+        // --- MediaPipe Hands Tracking ---
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const cursor = document.getElementById('cursor');
+        const trackerStatus = document.getElementById('tracker-status');
+        const gestureText = document.getElementById('gesture-text');
+        const coordsText = document.getElementById('coords-text');
+        const fpsText = document.getElementById('fps-text');
+
+        let lastFrameTime = performance.now();
+        let isPinching = false;
+        let lastHoveredElement = null;
+
+        // 1-Euro style Cursor Smoothing
+        let smoothX = window.innerWidth / 2;
+        let smoothY = window.innerHeight / 2;
+        const SMOOTH_ALPHA = 0.28;
+
+        function onResults(results) {
+            const now = performance.now();
+            const currentFps = Math.round(1000 / Math.max(1, now - lastFrameTime));
+            lastFrameTime = now;
+            fpsText.innerText = currentFps;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                trackerStatus.innerText = "ONLINE";
+                trackerStatus.style.color = "#00ffcc";
+
+                const landmarks = results.multiHandLandmarks[0];
+                const connections = (typeof HAND_CONNECTIONS !== 'undefined') ? HAND_CONNECTIONS : (window.HAND_CONNECTIONS || (typeof Hands !== 'undefined' ? Hands.HAND_CONNECTIONS : null));
+                if (typeof drawConnectors === 'function' && connections) {
+                    drawConnectors(canvasCtx, landmarks, connections, { color: '#00FFCC', lineWidth: 3 });
+                }
+                if (typeof drawLandmarks === 'function') {
+                    drawLandmarks(canvasCtx, landmarks, { color: '#FFFFFF', lineWidth: 1, radius: 2 });
+                }
+
+                // Index Tip (8)
+                const indexTip = landmarks[8];
+                const rawX = (1 - indexTip.x) * window.innerWidth;
+                const rawY = indexTip.y * window.innerHeight;
+
+                smoothX = smoothX * (1 - SMOOTH_ALPHA) + rawX * SMOOTH_ALPHA;
+                smoothY = smoothY * (1 - SMOOTH_ALPHA) + rawY * SMOOTH_ALPHA;
+
+                cursor.style.left = `${smoothX}px`;
+                cursor.style.top = `${smoothY}px`;
+                coordsText.innerText = `(${Math.round(smoothX)}, ${Math.round(smoothY)})`;
+
+                // Thumb Tip (4)
+                const thumbTip = landmarks[4];
+                const distance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+
+                // Hover Element Check
+                const targetEl = document.elementFromPoint(smoothX, smoothY);
+                const isInteractive = targetEl && (targetEl.classList.contains('interactive-card') || targetEl.classList.contains('cyber-btn'));
+
+                if (isInteractive) {
+                    cursor.classList.add('hovering');
+                    if (lastHoveredElement !== targetEl) {
+                        playTone(900, 0.04, 'sine');
+                        lastHoveredElement = targetEl;
+                    }
+                } else {
+                    cursor.classList.remove('hovering');
+                    lastHoveredElement = null;
+                }
+
+                // Pinch Detection (< 0.06 normalized distance)
+                if (distance < 0.058) {
+                    if (!isPinching) {
+                        isPinching = true;
+                        cursor.classList.add('clicking');
+                        gestureText.innerText = "PINCH CLICK";
+                        playTone(1350, 0.08, 'triangle');
+
+                        if (targetEl) {
+                            targetEl.click();
+                        }
+                    }
+                } else if (distance > 0.075) {
+                    if (isPinching) {
+                        isPinching = false;
+                        cursor.classList.remove('clicking');
+                        gestureText.innerText = "TRACKING";
+                    } else {
+                        gestureText.innerText = isInteractive ? "HOVERING" : "TRACKING";
+                    }
+                }
+            } else {
+                trackerStatus.innerText = "SEARCHING...";
+                trackerStatus.style.color = "#ffaa00";
+                gestureText.innerText = "NO HAND";
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.65
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start().catch((err) => {
+            trackerStatus.innerText = "CAM ERROR";
+            console.error(err);
+        });
+    </script>
+</body>
+</html>
